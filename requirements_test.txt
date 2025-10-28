@@ -1,0 +1,7 @@
+# Additional dependencies for keyboard testing
+pynput==1.7.6
+pyautogui==0.9.54
+pywin32==306
+selenium==4.15.2
+
+

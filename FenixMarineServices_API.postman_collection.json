@@ -1,0 +1,703 @@
+{
+	"info": {
+		"name": "Fenix Marine Services Screenshot API",
+		"description": "Complete API for Fenix Marine Services screenshot automation with full desktop capture and scrolling",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "http://37.60.243.201:5005",
+			"type": "string"
+		},
+		{
+			"key": "admin_password",
+			"value": "YB02Ss3JJdk",
+			"type": "string"
+		}
+	],
+	"item": [
+		{
+			"name": "📋 Information",
+			"item": [
+				{
+					"name": "API Info",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/",
+							"host": ["{{base_url}}"],
+							"path": [""]
+						},
+						"description": "Get API information and available endpoints for Fenix Marine Services Screenshot API"
+					},
+					"response": []
+				},
+				{
+					"name": "System Status",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test(\"Response has success field\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData).to.have.property('success');",
+									"    pm.expect(jsonData.success).to.be.true;",
+									"});",
+									"",
+									"pm.test(\"Response has system_info\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData).to.have.property('system_info');",
+									"    pm.expect(jsonData.system_info).to.have.property('name');",
+									"    pm.expect(jsonData.system_info).to.have.property('version');",
+									"});",
+									"",
+									"pm.test(\"Response has scheduler_info\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData).to.have.property('scheduler_info');",
+									"    pm.expect(jsonData.scheduler_info).to.have.property('frequency_hours');",
+									"    pm.expect(jsonData.scheduler_info).to.have.property('preferred_hour');",
+									"});",
+									"",
+									"pm.test(\"Response has screenshot stats\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData).to.have.property('screenshot_stats');",
+									"    pm.expect(jsonData.screenshot_stats).to.have.property('total_screenshots');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/status",
+							"host": ["{{base_url}}"],
+							"path": ["status"]
+						},
+						"description": "Get current system status, scheduler info, and screenshot statistics"
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "📸 Screenshot Operations",
+			"item": [
+				{
+					"name": "Capture Screenshot Now",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test(\"Response has success field\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData).to.have.property('success');",
+									"});",
+									"",
+									"pm.test(\"Response has download info\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    if (jsonData.success) {",
+									"        pm.expect(jsonData).to.have.property('filename');",
+									"        pm.expect(jsonData).to.have.property('download_url');",
+									"        pm.environment.set(\"screenshot_filename\", jsonData.filename);",
+									"        pm.environment.set(\"screenshot_download_url\", jsonData.download_url);",
+									"    }",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"admin_password\": \"{{admin_password}}\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/screenshot/now",
+							"host": ["{{base_url}}"],
+							"path": ["screenshot", "now"]
+						},
+						"description": "Capture full desktop screenshot immediately - navigates to Fenix Marine Services, logs in, and captures scrolling screenshots (takes ~3-4 minutes)"
+					},
+					"response": []
+				},
+				{
+					"name": "Get Screenshot by Date",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200 or 404\", function () {",
+									"    pm.expect([200, 404]).to.include(pm.response.code);",
+									"});",
+									"",
+									"pm.test(\"Response is JSON\", function () {",
+									"    pm.response.to.be.json;",
+									"});",
+									"",
+									"if (pm.response.code === 200) {",
+									"    pm.test(\"Response has required fields\", function () {",
+									"        var jsonData = pm.response.json();",
+									"        pm.expect(jsonData).to.have.property('success');",
+									"        pm.expect(jsonData).to.have.property('date');",
+									"        pm.expect(jsonData).to.have.property('filename');",
+									"        pm.expect(jsonData).to.have.property('download_url');",
+									"        pm.expect(jsonData).to.have.property('message');",
+									"        pm.environment.set(\"screenshot_download_url\", jsonData.download_url);",
+									"    });",
+									"    ",
+									"    pm.test(\"Download URL is valid\", function () {",
+									"        var jsonData = pm.response.json();",
+									"        pm.expect(jsonData.download_url).to.include('/download/');",
+									"    });",
+									"    ",
+									"    pm.test(\"Filename is PNG\", function () {",
+									"        var jsonData = pm.response.json();",
+									"        pm.expect(jsonData.filename).to.include('.png');",
+									"        pm.expect(jsonData.filename).to.include('fenix_screenshot_');",
+									"    });",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/screenshot/{{current_date}}",
+							"host": ["{{base_url}}"],
+							"path": ["screenshot", "{{current_date}}"]
+						},
+						"description": "Get screenshot by date (YYYY-MM-DD format) with public download URL"
+					},
+					"response": []
+				},
+				{
+					"name": "Get Screenshots Range (Last N)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200 or 404\", function () {",
+									"    pm.expect([200, 404]).to.include(pm.response.code);",
+									"});",
+									"",
+									"if (pm.response.code === 200) {",
+									"    pm.test(\"Response has required fields\", function () {",
+									"        var jsonData = pm.response.json();",
+									"        pm.expect(jsonData).to.have.property('success');",
+									"        pm.expect(jsonData).to.have.property('zip_filename');",
+									"        pm.expect(jsonData).to.have.property('download_url');",
+									"        pm.expect(jsonData).to.have.property('screenshot_count');",
+									"        pm.expect(jsonData).to.have.property('screenshots');",
+									"        pm.environment.set(\"zip_download_url\", jsonData.download_url);",
+									"    });",
+									"    ",
+									"    pm.test(\"ZIP filename is valid\", function () {",
+									"        var jsonData = pm.response.json();",
+									"        pm.expect(jsonData.zip_filename).to.include('screenshots_');",
+									"        pm.expect(jsonData.zip_filename).to.include('.zip');",
+									"    });",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/screenshots/range?last_n=3",
+							"host": ["{{base_url}}"],
+							"path": ["screenshots", "range"],
+							"query": [
+								{
+									"key": "last_n",
+									"value": "3"
+								}
+							]
+						},
+						"description": "Get last N screenshots as ZIP file"
+					},
+					"response": []
+				},
+				{
+					"name": "Get Screenshots Range (Date Range)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200 or 404\", function () {",
+									"    pm.expect([200, 404]).to.include(pm.response.code);",
+									"});",
+									"",
+									"if (pm.response.code === 200) {",
+									"    pm.test(\"Response has required fields\", function () {",
+									"        var jsonData = pm.response.json();",
+									"        pm.expect(jsonData).to.have.property('success');",
+									"        pm.expect(jsonData).to.have.property('zip_filename');",
+									"        pm.expect(jsonData).to.have.property('download_url');",
+									"        pm.expect(jsonData).to.have.property('screenshot_count');",
+									"    });",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/screenshots/range?start_date={{start_date}}&end_date={{end_date}}",
+							"host": ["{{base_url}}"],
+							"path": ["screenshots", "range"],
+							"query": [
+								{
+									"key": "start_date",
+									"value": "{{start_date}}"
+								},
+								{
+									"key": "end_date",
+									"value": "{{end_date}}"
+								}
+							]
+						},
+						"description": "Get screenshots within date range as ZIP file"
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "📁 File Downloads",
+			"item": [
+				{
+					"name": "Download Screenshot File",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200 or 404\", function () {",
+									"    pm.expect([200, 404]).to.include(pm.response.code);",
+									"});",
+									"",
+									"if (pm.response.code === 200) {",
+									"    pm.test(\"Response is PNG image\", function () {",
+									"        pm.expect(pm.response.headers.get('Content-Type')).to.include('image/png');",
+									"    });",
+									"    ",
+									"    pm.test(\"File size is reasonable\", function () {",
+									"        pm.expect(pm.response.responseSize).to.be.above(1000);",
+									"    });",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/download/{{screenshot_filename}}",
+							"host": ["{{base_url}}"],
+							"path": ["download", "{{screenshot_filename}}"]
+						},
+						"description": "Download specific screenshot file (use filename from previous responses)"
+					},
+					"response": []
+				},
+				{
+					"name": "Download ZIP File",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200 or 404\", function () {",
+									"    pm.expect([200, 404]).to.include(pm.response.code);",
+									"});",
+									"",
+									"if (pm.response.code === 200) {",
+									"    pm.test(\"Response is ZIP file\", function () {",
+									"        pm.expect(pm.response.headers.get('Content-Type')).to.include('application/zip');",
+									"    });",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/download/{{zip_filename}}",
+							"host": ["{{base_url}}"],
+							"path": ["download", "{{zip_filename}}"]
+						},
+						"description": "Download ZIP file containing multiple screenshots"
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "⚙️ Admin Functions",
+			"item": [
+				{
+					"name": "Change Frequency",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test(\"Response has success field\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData).to.have.property('success');",
+									"    pm.expect(jsonData.success).to.be.true;",
+									"});",
+									"",
+									"pm.test(\"Frequency updated\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData).to.have.property('frequency_hours');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"admin_password\": \"{{admin_password}}\",\n    \"frequency_hours\": 24\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/admin/frequency",
+							"host": ["{{base_url}}"],
+							"path": ["admin", "frequency"]
+						},
+						"description": "Change screenshot capture frequency (in hours)"
+					},
+					"response": []
+				},
+				{
+					"name": "Set Preferred Hour",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test(\"Response has success field\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData).to.have.property('success');",
+									"    pm.expect(jsonData.success).to.be.true;",
+									"});",
+									"",
+									"pm.test(\"Preferred hour updated\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData).to.have.property('preferred_hour');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"admin_password\": \"{{admin_password}}\",\n    \"preferred_hour\": 10\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/admin/preferred_hour",
+							"host": ["{{base_url}}"],
+							"path": ["admin", "preferred_hour"]
+						},
+						"description": "Set preferred hour for scheduled screenshot captures (0-23, 24-hour format)"
+					},
+					"response": []
+				},
+				{
+					"name": "Update Fenix Credentials",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test(\"Response has success field\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData).to.have.property('success');",
+									"    pm.expect(jsonData.success).to.be.true;",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"admin_password\": \"{{admin_password}}\",\n    \"username\": \"{{username}}\",\n    \"password\": \"{{password}}\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/admin/credentials",
+							"host": ["{{base_url}}"],
+							"path": ["admin", "credentials"]
+						},
+						"description": "Update Fenix Marine Services portal login credentials"
+					},
+					"response": []
+				},
+				{
+					"name": "Cleanup Screenshots",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test(\"Response has success field\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData).to.have.property('success');",
+									"    pm.expect(jsonData.success).to.be.true;",
+									"});",
+									"",
+									"pm.test(\"Response has cleanup message\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData).to.have.property('message');",
+									"    pm.expect(jsonData.message).to.include('deleted');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"admin_password\": \"{{admin_password}}\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/admin/cleanup",
+							"host": ["{{base_url}}"],
+							"path": ["admin", "cleanup"]
+						},
+						"description": "Delete all screenshots (USE WITH CAUTION)"
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "❌ Error Testing",
+			"item": [
+				{
+					"name": "Invalid Admin Password",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 403\", function () {",
+									"    pm.response.to.have.status(403);",
+									"});",
+									"",
+									"pm.test(\"Response has error field\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData).to.have.property('success');",
+									"    pm.expect(jsonData.success).to.be.false;",
+									"    pm.expect(jsonData).to.have.property('error');",
+									"    pm.expect(jsonData.error).to.include('Invalid admin password');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"admin_password\": \"wrong_password\",\n    \"frequency_hours\": 12\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/admin/frequency",
+							"host": ["{{base_url}}"],
+							"path": ["admin", "frequency"]
+						},
+						"description": "Test invalid admin password (should return 403)"
+					},
+					"response": []
+				},
+				{
+					"name": "Invalid Date Format",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 400\", function () {",
+									"    pm.response.to.have.status(400);",
+									"});",
+									"",
+									"pm.test(\"Response has error field\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData).to.have.property('success');",
+									"    pm.expect(jsonData.success).to.be.false;",
+									"    pm.expect(jsonData).to.have.property('error');",
+									"    pm.expect(jsonData.error).to.include('Invalid date format');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/screenshot/invalid-date",
+							"host": ["{{base_url}}"],
+							"path": ["screenshot", "invalid-date"]
+						},
+						"description": "Test invalid date format (should return 400)"
+					},
+					"response": []
+				},
+				{
+					"name": "Non-existent Screenshot",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 404\", function () {",
+									"    pm.response.to.have.status(404);",
+									"});",
+									"",
+									"pm.test(\"Response has error field\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData).to.have.property('success');",
+									"    pm.expect(jsonData.success).to.be.false;",
+									"    pm.expect(jsonData).to.have.property('error');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/download/non-existent-file.png",
+							"host": ["{{base_url}}"],
+							"path": ["download", "non-existent-file.png"]
+						},
+						"description": "Test downloading non-existent file (should return 404)"
+					},
+					"response": []
+				}
+			]
+		}
+	],
+	"event": [
+		{
+			"listen": "prerequest",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					"// Set current date in YYYY-MM-DD format",
+					"pm.environment.set('current_date', new Date().toISOString().split('T')[0]);",
+					"",
+					"// Set date range for testing (last 7 days)",
+					"var endDate = new Date();",
+					"var startDate = new Date();",
+					"startDate.setDate(endDate.getDate() - 7);",
+					"",
+					"pm.environment.set('end_date', endDate.toISOString().split('T')[0]);",
+					"pm.environment.set('start_date', startDate.toISOString().split('T')[0]);"
+				]
+			}
+		}
+	]
+}
