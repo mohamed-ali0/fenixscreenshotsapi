@@ -16,6 +16,8 @@ import win32con
 import psutil
 from PIL import Image, ImageGrab
 import io
+import ctypes
+from ctypes import wintypes
 
 
 def kill_chrome_process_tree(driver):
@@ -57,146 +59,61 @@ def kill_chrome_process_tree(driver):
         return 0
 
 
-def bring_chrome_to_front(aggressive=False):
-    """Force Chrome window to the front and set to fullscreen using aggressive methods"""
+def capture_screen_api():
+    """
+    Capture screen using Windows API - works even when RDP is disconnected
+    """
     try:
-        def callback(hwnd, windows):
-            if win32gui.IsWindowVisible(hwnd):
-                window_text = win32gui.GetWindowText(hwnd)
-                if "Google Chrome" in window_text or "Chrome" in window_text:
-                    windows.append(hwnd)
-            return True
+        # Get screen dimensions
+        user32 = ctypes.windll.user32
+        gdi32 = ctypes.windll.gdi32
         
-        windows = []
-        win32gui.EnumWindows(callback, windows)
+        # Get screen size
+        screen_width = user32.GetSystemMetrics(0)  # SM_CXSCREEN
+        screen_height = user32.GetSystemMetrics(1)  # SM_CYSCREEN
         
-        if windows:
-            # Get the first Chrome window
-            hwnd = windows[0]
-            
-            # Restore if minimized
-            try:
-                if win32gui.IsIconic(hwnd):
-                    win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
-                    time.sleep(0.2)
-            except:
-                pass
-            
-            # Show window normally first
-            try:
-                win32gui.ShowWindow(hwnd, win32con.SW_SHOW)
-                time.sleep(0.1)
-            except:
-                pass
-            
-            if aggressive:
-                # More aggressive approach for screenshot mode
-                try:
-                    # Force window to be always on top during screenshots
-                    win32gui.SetWindowPos(hwnd, win32con.HWND_TOPMOST, 0, 0, 0, 0,
-                                         win32con.SWP_NOMOVE | win32con.SWP_NOSIZE | win32con.SWP_SHOWWINDOW)
-                    time.sleep(0.2)
-                    
-                    # Set as active window with force
-                    win32gui.SetActiveWindow(hwnd)
-                    time.sleep(0.1)
-                    
-                    print(f"[{datetime.now()}] Chrome window locked to front (aggressive mode)")
-                except Exception as e:
-                    print(f"[{datetime.now()}] Warning: Aggressive window management failed: {e}")
-            else:
-                # Normal mode - temporarily topmost then release
-                try:
-                    # Make it topmost temporarily
-                    win32gui.SetWindowPos(hwnd, win32con.HWND_TOPMOST, 0, 0, 0, 0,
-                                         win32con.SWP_NOMOVE | win32con.SWP_NOSIZE | win32con.SWP_SHOWWINDOW)
-                    time.sleep(0.1)
-                    
-                    # Remove topmost flag (so other windows can go on top if needed)
-                    win32gui.SetWindowPos(hwnd, win32con.HWND_NOTOPMOST, 0, 0, 0, 0,
-                                         win32con.SWP_NOMOVE | win32con.SWP_NOSIZE | win32con.SWP_SHOWWINDOW)
-                    time.sleep(0.1)
-                except:
-                    pass
-            
-            # Bring to front
-            try:
-                win32gui.BringWindowToTop(hwnd)
-                time.sleep(0.1)
-            except:
-                pass
-            
-            # Set as foreground window
-            try:
-                win32gui.SetForegroundWindow(hwnd)
-                time.sleep(0.1)
-            except:
-                pass
-            
-            # Maximize
-            try:
-                win32gui.ShowWindow(hwnd, win32con.SW_MAXIMIZE)
-            except:
-                pass
-            
-            # Final bring to top
-            try:
-                win32gui.BringWindowToTop(hwnd)
-            except:
-                pass
-            
-            mode = "aggressive" if aggressive else "normal"
-            print(f"[{datetime.now()}] Chrome window management completed ({mode} mode)")
-            return True
+        # Create device context
+        hdc_screen = user32.GetDC(0)
+        hdc_mem = gdi32.CreateCompatibleDC(hdc_screen)
         
-        print(f"[{datetime.now()}] No Chrome window found")
-        return False
+        # Create bitmap
+        hbitmap = gdi32.CreateCompatibleBitmap(hdc_screen, screen_width, screen_height)
+        gdi32.SelectObject(hdc_mem, hbitmap)
+        
+        # Copy screen to memory DC
+        gdi32.BitBlt(hdc_mem, 0, 0, screen_width, screen_height, hdc_screen, 0, 0, 0x00CC0020)  # SRCCOPY
+        
+        # Get bitmap info
+        bmp_info = wintypes.BITMAPINFO()
+        bmp_info.bmiHeader.biSize = ctypes.sizeof(wintypes.BITMAPINFOHEADER)
+        bmp_info.bmiHeader.biWidth = screen_width
+        bmp_info.bmiHeader.biHeight = -screen_height  # Negative for top-down bitmap
+        bmp_info.bmiHeader.biPlanes = 1
+        bmp_info.bmiHeader.biBitCount = 32
+        bmp_info.bmiHeader.biCompression = 0  # BI_RGB
+        
+        # Get bitmap data
+        buffer_size = screen_width * screen_height * 4
+        buffer = ctypes.create_string_buffer(buffer_size)
+        
+        gdi32.GetDIBits(hdc_screen, hbitmap, 0, screen_height, buffer, ctypes.byref(bmp_info), 0)
+        
+        # Clean up
+        gdi32.DeleteObject(hbitmap)
+        gdi32.DeleteDC(hdc_mem)
+        user32.ReleaseDC(0, hdc_screen)
+        
+        # Convert to PIL Image
+        image = Image.frombuffer('RGBA', (screen_width, screen_height), buffer, 'raw', 'BGRA', 0, 1)
+        # Convert RGBA to RGB
+        image = image.convert('RGB')
+        
+        print(f"[{datetime.now()}] Screen captured via Windows API: {screen_width}x{screen_height}px")
+        return image
         
     except Exception as e:
-        print(f"[{datetime.now()}] Warning: Error in window management: {str(e)}")
-        print(f"[{datetime.now()}] Continuing anyway - automation should still work")
-        return False
-
-
-def ensure_chrome_stays_front():
-    """Continuously ensure Chrome stays in front during critical operations"""
-    try:
-        bring_chrome_to_front(aggressive=True)
-        return True
-    except Exception as e:
-        print(f"[{datetime.now()}] Warning: Could not ensure Chrome stays front: {e}")
-        return False
-
-
-def release_chrome_topmost():
-    """Release Chrome from always-on-top mode"""
-    try:
-        def callback(hwnd, windows):
-            if win32gui.IsWindowVisible(hwnd):
-                window_text = win32gui.GetWindowText(hwnd)
-                if "Google Chrome" in window_text or "Chrome" in window_text:
-                    windows.append(hwnd)
-            return True
-        
-        windows = []
-        win32gui.EnumWindows(callback, windows)
-        
-        if windows:
-            hwnd = windows[0]
-            # Remove topmost flag
-            try:
-                win32gui.SetWindowPos(hwnd, win32con.HWND_NOTOPMOST, 0, 0, 0, 0,
-                                     win32con.SWP_NOMOVE | win32con.SWP_NOSIZE | win32con.SWP_SHOWWINDOW)
-                print(f"[{datetime.now()}] Chrome released from always-on-top mode")
-                return True
-            except:
-                pass
-        
-        return False
-        
-    except Exception as e:
-        print(f"[{datetime.now()}] Warning: Could not release Chrome topmost: {e}")
-        return False
+        print(f"[{datetime.now()}] Windows API screen capture failed: {e}")
+        return None
 
 
 def find_scroll_target(driver):
@@ -466,10 +383,6 @@ def capture_full_page_screenshot(driver, filename):
         while screenshot_count < 50:  # Safety limit
             screenshot_count += 1
             
-            # Ensure Chrome stays in front before each screenshot
-            if screenshot_count % 3 == 1:  # Every 3rd screenshot, reinforce window position
-                ensure_chrome_stays_front()
-            
             # Get current position
             if scroll_target:
                 current_position = driver.execute_script("return arguments[0].scrollTop;", scroll_target)
@@ -478,9 +391,20 @@ def capture_full_page_screenshot(driver, filename):
             
             print(f"[{datetime.now()}] Capturing FULL SCREEN screenshot {screenshot_count} at position {current_position}px")
             
-            # Take full desktop screenshot (includes taskbar, URL bar, everything)
-            screenshot = ImageGrab.grab()
-            screenshots.append(screenshot)
+            # Take full screen screenshot that works with RDP disconnected
+            try:
+                # Try Windows API method first (works when RDP is disconnected)
+                screenshot = capture_screen_api()
+                if screenshot is None:
+                    # Fallback to ImageGrab
+                    screenshot = ImageGrab.grab()
+                screenshots.append(screenshot)
+            except Exception as e:
+                print(f"[{datetime.now()}] Warning: Screen capture failed: {e}")
+                # Final fallback to browser screenshot
+                screenshot_png = driver.get_screenshot_as_png()
+                screenshot = Image.open(io.BytesIO(screenshot_png))
+                screenshots.append(screenshot)
             
             # Check if we've reached the bottom
             if scroll_target:
@@ -529,10 +453,22 @@ def capture_full_page_screenshot(driver, filename):
                     if outer_scrolled:
                         time.sleep(2)  # Wait for any animations
                         # Take final FULL SCREEN screenshot with bottom bars moved
-                        final_screenshot = ImageGrab.grab()
-                        screenshots.append(final_screenshot)
-                        screenshot_count += 1
-                        print(f"[{datetime.now()}] Captured final FULL SCREEN screenshot {screenshot_count} with bottom bars pushed out of view")
+                        try:
+                            # Try Windows API method first (works when RDP is disconnected)
+                            final_screenshot = capture_screen_api()
+                            if final_screenshot is None:
+                                # Fallback to ImageGrab
+                                final_screenshot = ImageGrab.grab()
+                            screenshots.append(final_screenshot)
+                            screenshot_count += 1
+                            print(f"[{datetime.now()}] Captured final FULL SCREEN screenshot {screenshot_count} with bottom bars pushed out of view")
+                        except Exception as e:
+                            print(f"[{datetime.now()}] Warning: Final screen capture failed: {e}")
+                            # Final fallback to browser screenshot
+                            screenshot_png = driver.get_screenshot_as_png()
+                            final_screenshot = Image.open(io.BytesIO(screenshot_png))
+                            screenshots.append(final_screenshot)
+                            screenshot_count += 1
                     else:
                         print(f"[{datetime.now()}] ⚠️ Could not scroll outer container - bottom bar may still be visible")
                     
@@ -581,7 +517,7 @@ def capture_full_page_screenshot(driver, filename):
             return True, final_path
         else:
             return False, "No screenshots captured"
-            
+        
     except Exception as e:
         error_msg = f"Screenshot capture failed: {str(e)}"
         print(f"[{datetime.now()}] {error_msg}")
@@ -676,11 +612,10 @@ def download_excel_report(username, password):
         driver = webdriver.Chrome(options=chrome_options)
         driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
         
-        # Force Chrome window to front at startup
-        print(f"[{datetime.now()}] Forcing Chrome window to front...")
-        time.sleep(1)  # Brief wait for window to appear
-        bring_chrome_to_front()
+        # Maximize Chrome window
+        print(f"[{datetime.now()}] Maximizing Chrome window...")
         driver.maximize_window()
+        time.sleep(1)  # Brief wait for window to appear
         print(f"[{datetime.now()}] Chrome window setup complete")
         
         print(f"[{datetime.now()}] Navigating to Fenix Marine Services portal...")
@@ -721,10 +656,10 @@ def download_excel_report(username, password):
         else:
             print(f"[{datetime.now()}] Login button not found, trying generic button.button selector...")
             # Fallback to original selector if specific login text not found
-            login_button = WebDriverWait(driver, 10).until(
+        login_button = WebDriverWait(driver, 10).until(
                 EC.element_to_be_clickable((By.CSS_SELECTOR, "button.button"))
-            )
-            login_button.click()
+        )
+        login_button.click()
         
         # Wait 15 seconds for login page to load
         print(f"[{datetime.now()}] Waiting 15s for login page...")
@@ -802,10 +737,6 @@ def download_excel_report(username, password):
         print(f"[{datetime.now()}] Waiting 30s for page to load after login...")
         time.sleep(30)
         
-        # Ensure Chrome stays in front after login
-        print(f"[{datetime.now()}] Ensuring Chrome window stays in front after login...")
-        bring_chrome_to_front()
-        
         # Expand "FMS Terminal Schedule" in left sidebar
         print(f"[{datetime.now()}] Looking for FMS Terminal Schedule in sidebar...")
         try:
@@ -857,10 +788,10 @@ def download_excel_report(username, password):
                         EC.element_to_be_clickable((By.XPATH, selector))
                     )
                     print(f"[{datetime.now()}] Found Empty Receiving Schedule with selector: {selector}")
-                    break
-                except:
-                    continue
-            
+                break
+            except:
+                continue
+        
             if empty_receiving_element:
                 print(f"[{datetime.now()}] Clicking Empty Receiving Schedule...")
                 empty_receiving_element.click()
@@ -876,27 +807,15 @@ def download_excel_report(username, password):
         # Successfully navigated to Empty Receiving Schedule page
         print(f"[{datetime.now()}] Successfully completed navigation to Empty Receiving Schedule")
         
-        # Ensure Chrome is in front before screenshot process
-        print(f"[{datetime.now()}] Ensuring Chrome window is in front for screenshots...")
-        bring_chrome_to_front()
-        
         # Wait 15 seconds before starting screenshot process
         print(f"[{datetime.now()}] Waiting 15 seconds before capturing screenshots...")
         time.sleep(15)
-        
-        # Lock Chrome window to front during screenshot process
-        print(f"[{datetime.now()}] Locking Chrome window to front during screenshot capture...")
-        ensure_chrome_stays_front()
         
         # Capture full page screenshot with scrolling
         timestamp = datetime.utcnow().strftime("%Y-%m-%d_%H-%M-%S")
         screenshot_filename = f"fenix_screenshot_{timestamp}.png"
         
         success, screenshot_path = capture_full_page_screenshot(driver, screenshot_filename)
-        
-        # Release Chrome from always-on-top mode after screenshot capture
-        print(f"[{datetime.now()}] Releasing Chrome from always-on-top mode...")
-        release_chrome_topmost()
         
         if success:
             return True, f"Successfully captured full DESKTOP screenshot: {screenshot_path}"
@@ -909,13 +828,6 @@ def download_excel_report(username, password):
         return False, error_msg
     
     finally:
-        # Release Chrome from always-on-top mode in case of error
-        try:
-            print(f"[{datetime.now()}] Ensuring Chrome is released from always-on-top mode...")
-            release_chrome_topmost()
-        except Exception as e:
-            print(f"[{datetime.now()}] Warning: Could not release Chrome topmost mode: {e}")
-        
         # Close the browser
         if driver:
             try:
