@@ -16,6 +16,10 @@ import win32con
 import psutil
 from PIL import Image, ImageGrab
 import io
+import win32gui
+import win32ui
+import win32con
+import win32api
 
 
 def kill_chrome_process_tree(driver):
@@ -354,10 +358,150 @@ def perform_scroll(driver, scroll_target=None, scroll_amount=800):
     return success
 
 
+def capture_desktop_screenshot(driver=None):
+    """
+    Capture desktop screenshot using multiple fallback methods for Windows servers without RDC
+    """
+    try:
+        # Method 1: Try PIL ImageGrab (works when RDC is active)
+        try:
+            screenshot = ImageGrab.grab()
+            print(f"[{datetime.now()}] ✅ ImageGrab screenshot successful")
+            return screenshot
+        except Exception as e:
+            print(f"[{datetime.now()}] ⚠️ ImageGrab failed (expected without RDC): {e}")
+    
+        # Method 2: Win32 API screenshot (works without RDC)
+        try:
+            screenshot = capture_screen_win32()
+            if screenshot:
+                print(f"[{datetime.now()}] ✅ Win32 API screenshot successful")
+                return screenshot
+        except Exception as e:
+            print(f"[{datetime.now()}] ⚠️ Win32 API screenshot failed: {e}")
+        
+        # Method 3: Browser-based screenshot with window manipulation
+        if driver:
+            try:
+                screenshot = capture_browser_with_chrome(driver)
+                if screenshot:
+                    print(f"[{datetime.now()}] ✅ Browser-based screenshot successful")
+                    return screenshot
+            except Exception as e:
+                print(f"[{datetime.now()}] ⚠️ Browser-based screenshot failed: {e}")
+        
+        print(f"[{datetime.now()}] ❌ All screenshot methods failed")
+        return None
+        
+    except Exception as e:
+        print(f"[{datetime.now()}] ❌ Screenshot capture error: {e}")
+        return None
+
+
+def capture_screen_win32():
+    """
+    Capture screenshot using Win32 API - works without RDC
+    """
+    try:
+        # Get screen dimensions
+        screen_width = win32api.GetSystemMetrics(win32con.SM_CXSCREEN)
+        screen_height = win32api.GetSystemMetrics(win32con.SM_CYSCREEN)
+        
+        # Create device contexts
+        hdesktop = win32gui.GetDesktopWindow()
+        hwndDC = win32gui.GetWindowDC(hdesktop)
+        mfcDC = win32ui.CreateDCFromHandle(hwndDC)
+        saveDC = mfcDC.CreateCompatibleDC()
+        
+        # Create bitmap
+        saveBitMap = win32ui.CreateBitmap()
+        saveBitMap.CreateCompatibleBitmap(mfcDC, screen_width, screen_height)
+        saveDC.SelectObject(saveBitMap)
+        
+        # Copy screen to bitmap
+        saveDC.BitBlt((0, 0), (screen_width, screen_height), mfcDC, (0, 0), win32con.SRCCOPY)
+        
+        # Convert to PIL Image
+        bmpinfo = saveBitMap.GetInfo()
+        bmpstr = saveBitMap.GetBitmapBits(True)
+        
+        screenshot = Image.frombuffer(
+            'RGB',
+            (bmpinfo['bmWidth'], bmpinfo['bmHeight']),
+            bmpstr, 'raw', 'BGRX', 0, 1
+        )
+        
+        # Cleanup
+        win32gui.DeleteObject(saveBitMap.GetHandle())
+        saveDC.DeleteDC()
+        mfcDC.DeleteDC()
+        win32gui.ReleaseDC(hdesktop, hwndDC)
+        
+        return screenshot
+        
+    except Exception as e:
+        print(f"[{datetime.now()}] Win32 screenshot error: {e}")
+        return None
+
+
+def capture_browser_with_chrome(driver):
+    """
+    Capture browser screenshot and simulate taskbar/desktop context
+    """
+    try:
+        # Get browser screenshot
+        screenshot_png = driver.get_screenshot_as_png()
+        browser_screenshot = Image.open(io.BytesIO(screenshot_png))
+        
+        # Get browser window position and size
+        window_rect = driver.get_window_rect()
+        
+        # Get screen dimensions
+        try:
+            screen_width = win32api.GetSystemMetrics(win32con.SM_CXSCREEN)
+            screen_height = win32api.GetSystemMetrics(win32con.SM_CYSCREEN)
+        except:
+            screen_width = 1920  # Default fallback
+            screen_height = 1080
+        
+        # Create a desktop-like background
+        desktop_image = Image.new('RGB', (screen_width, screen_height), color=(0, 120, 215))  # Windows blue
+        
+        # Add taskbar simulation (bottom bar)
+        taskbar_height = 40
+        taskbar_color = (0, 0, 0)  # Black taskbar
+        for y in range(screen_height - taskbar_height, screen_height):
+            for x in range(screen_width):
+                desktop_image.putpixel((x, y), taskbar_color)
+        
+        # Add start button simulation
+        start_button_width = 100
+        start_button_color = (45, 45, 45)
+        for y in range(screen_height - taskbar_height + 5, screen_height - 5):
+            for x in range(5, start_button_width):
+                desktop_image.putpixel((x, y), start_button_color)
+        
+        # Paste browser screenshot onto desktop
+        browser_x = max(0, window_rect.get('x', 0))
+        browser_y = max(0, window_rect.get('y', 0))
+        
+        # Ensure browser fits on desktop
+        paste_x = min(browser_x, screen_width - browser_screenshot.width)
+        paste_y = min(browser_y, screen_height - browser_screenshot.height - taskbar_height)
+        
+        desktop_image.paste(browser_screenshot, (paste_x, paste_y))
+        
+        return desktop_image
+        
+    except Exception as e:
+        print(f"[{datetime.now()}] Browser-based screenshot error: {e}")
+        return None
+
+
 def capture_full_page_screenshot(driver, filename):
     """
     Capture full DESKTOP screenshots by scrolling and stitching images together
-    Shows taskbar, URL bar, and complete desktop view
+    Shows taskbar, URL bar, and complete desktop view - Works without RDC
     """
     try:
         # Create screenshots directory
@@ -415,9 +559,13 @@ def capture_full_page_screenshot(driver, filename):
             
             print(f"[{datetime.now()}] Capturing FULL SCREEN screenshot {screenshot_count} at position {current_position}px")
             
-            # Take full desktop screenshot (includes taskbar, URL bar, everything)
-            screenshot = ImageGrab.grab()
-            screenshots.append(screenshot)
+            # Take full desktop screenshot using multiple fallback methods
+            screenshot = capture_desktop_screenshot(driver)
+            if screenshot:
+                screenshots.append(screenshot)
+            else:
+                print(f"[{datetime.now()}] Failed to capture screenshot {screenshot_count}, stopping")
+                break
             
             # Check if we've reached the bottom
             if scroll_target:
@@ -466,10 +614,13 @@ def capture_full_page_screenshot(driver, filename):
                     if outer_scrolled:
                         time.sleep(2)  # Wait for any animations
                         # Take final FULL SCREEN screenshot with bottom bars moved
-                        final_screenshot = ImageGrab.grab()
-                        screenshots.append(final_screenshot)
-                        screenshot_count += 1
-                        print(f"[{datetime.now()}] Captured final FULL SCREEN screenshot {screenshot_count} with bottom bars pushed out of view")
+                        final_screenshot = capture_desktop_screenshot(driver)
+                        if final_screenshot:
+                            screenshots.append(final_screenshot)
+                            screenshot_count += 1
+                            print(f"[{datetime.now()}] Captured final FULL SCREEN screenshot {screenshot_count} with bottom bars pushed out of view")
+                        else:
+                            print(f"[{datetime.now()}] Failed to capture final screenshot")
                     else:
                         print(f"[{datetime.now()}] ⚠️ Could not scroll outer container - bottom bar may still be visible")
                     

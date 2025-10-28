@@ -1,50 +1,74 @@
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-env/
-venv/
-ENV/
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-
-# Flask
-instance/
-.webassets-cache
-
-# Selenium
-*.log
-chromedriver.exe
-geckodriver.exe
-
-# Application specific
-screenshots/
+# System Settings - Contains sensitive credentials
 system_settings.json
+
+# Screenshots directory - Large files
+screenshots/
+downloads/
+
+# Chrome profile data - Contains browser data and credentials
 chrome_profile/
 
-# IDE
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+
+# Virtual environments
+venv/
+env/
+ENV/
+
+# IDE files
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
 
-# OS
+# OS files
 .DS_Store
 Thumbs.db
+desktop.ini
 
+# Log files
+*.log
+logs/
+
+# Temporary files
+*.tmp
+*.temp
+temp.ps1
+
+# Test files
+test_*.xlsx
+test_*.pdf
+test_*.png
+test_*.zip
+downloaded_*
+
+# Environment files
+.env
+.env.local
+.env.production
+
+# Database files
+*.db
+*.sqlite
+
+# SSL certificates
+*.pem
+*.key
+*.crt
+
+# Backup files
+*.bak
+*.backup
+
+# Windows specific
+*.lnk
+
+# Process IDs
+*.pid
