@@ -13,13 +13,17 @@ import glob
 from pynput.keyboard import Controller, Key
 import win32gui
 import win32con
-import psutil
-from PIL import Image, ImageGrab
-import io
-import win32gui
 import win32ui
-import win32con
 import win32api
+import psutil
+from PIL import Image, ImageGrab, ImageDraw
+import io
+try:
+    import mss
+    MSS_AVAILABLE = True
+except ImportError:
+    MSS_AVAILABLE = False
+    print("MSS not available - install with: pip install mss")
 
 
 def kill_chrome_process_tree(driver):
@@ -371,7 +375,17 @@ def capture_desktop_screenshot(driver=None):
         except Exception as e:
             print(f"[{datetime.now()}] ⚠️ ImageGrab failed (expected without RDC): {e}")
     
-        # Method 2: Win32 API screenshot (works without RDC)
+        # Method 2: MSS (Microsoft Screen Capture) - often works when Win32 fails
+        if MSS_AVAILABLE:
+            try:
+                screenshot = capture_screen_mss()
+                if screenshot:
+                    print(f"[{datetime.now()}] ✅ MSS screenshot successful")
+                    return screenshot
+            except Exception as e:
+                print(f"[{datetime.now()}] ⚠️ MSS screenshot failed: {e}")
+        
+        # Method 3: Win32 API screenshot (works without RDC)
         try:
             screenshot = capture_screen_win32()
             if screenshot:
@@ -380,7 +394,7 @@ def capture_desktop_screenshot(driver=None):
         except Exception as e:
             print(f"[{datetime.now()}] ⚠️ Win32 API screenshot failed: {e}")
         
-        # Method 3: Browser-based screenshot with window manipulation
+        # Method 4: Browser-based screenshot with window manipulation
         if driver:
             try:
                 screenshot = capture_browser_with_chrome(driver)
@@ -400,98 +414,227 @@ def capture_desktop_screenshot(driver=None):
 
 def capture_screen_win32():
     """
-    Capture screenshot using Win32 API - works without RDC
+    Capture screenshot using Win32 API - works without RDC (improved version)
     """
     try:
         # Get screen dimensions
         screen_width = win32api.GetSystemMetrics(win32con.SM_CXSCREEN)
         screen_height = win32api.GetSystemMetrics(win32con.SM_CYSCREEN)
+        print(f"[{datetime.now()}] Win32 detected screen: {screen_width}x{screen_height}")
         
-        # Create device contexts
-        hdesktop = win32gui.GetDesktopWindow()
-        hwndDC = win32gui.GetWindowDC(hdesktop)
-        mfcDC = win32ui.CreateDCFromHandle(hwndDC)
-        saveDC = mfcDC.CreateCompatibleDC()
+        # Try multiple approaches for Win32 screenshot
         
-        # Create bitmap
-        saveBitMap = win32ui.CreateBitmap()
-        saveBitMap.CreateCompatibleBitmap(mfcDC, screen_width, screen_height)
-        saveDC.SelectObject(saveBitMap)
+        # Method 1: Desktop window approach
+        try:
+            hdesktop = win32gui.GetDesktopWindow()
+            hwndDC = win32gui.GetWindowDC(hdesktop)
+            mfcDC = win32ui.CreateDCFromHandle(hwndDC)
+            saveDC = mfcDC.CreateCompatibleDC()
+            
+            # Create bitmap
+            saveBitMap = win32ui.CreateBitmap()
+            saveBitMap.CreateCompatibleBitmap(mfcDC, screen_width, screen_height)
+            saveDC.SelectObject(saveBitMap)
+            
+            # Copy screen to bitmap with error checking
+            result = saveDC.BitBlt((0, 0), (screen_width, screen_height), mfcDC, (0, 0), win32con.SRCCOPY)
+            if not result:
+                raise Exception("BitBlt operation failed")
+            
+            # Convert to PIL Image
+            bmpinfo = saveBitMap.GetInfo()
+            bmpstr = saveBitMap.GetBitmapBits(True)
+            
+            screenshot = Image.frombuffer(
+                'RGB',
+                (bmpinfo['bmWidth'], bmpinfo['bmHeight']),
+                bmpstr, 'raw', 'BGRX', 0, 1
+            )
+            
+            # Cleanup
+            win32gui.DeleteObject(saveBitMap.GetHandle())
+            saveDC.DeleteDC()
+            mfcDC.DeleteDC()
+            win32gui.ReleaseDC(hdesktop, hwndDC)
+            
+            print(f"[{datetime.now()}] Win32 Method 1 successful: {screenshot.width}x{screenshot.height}")
+            return screenshot
+            
+        except Exception as e1:
+            print(f"[{datetime.now()}] Win32 Method 1 failed: {e1}")
         
-        # Copy screen to bitmap
-        saveDC.BitBlt((0, 0), (screen_width, screen_height), mfcDC, (0, 0), win32con.SRCCOPY)
+        # Method 2: Screen DC approach
+        try:
+            # Get screen DC directly
+            hdcScreen = win32gui.GetDC(0)  # Get screen DC
+            hdcMemDC = win32gui.CreateCompatibleDC(hdcScreen)
+            hbmScreen = win32gui.CreateCompatibleBitmap(hdcScreen, screen_width, screen_height)
+            win32gui.SelectObject(hdcMemDC, hbmScreen)
+            
+            # Copy screen to memory DC
+            result = win32gui.BitBlt(hdcMemDC, 0, 0, screen_width, screen_height, hdcScreen, 0, 0, win32con.SRCCOPY)
+            if not result:
+                raise Exception("BitBlt operation failed on screen DC")
+            
+            # Get bitmap bits
+            bmpinfo = win32gui.GetObject(hbmScreen)
+            bmpstr = win32gui.GetBitmapBits(hbmScreen, bmpinfo.bmWidthBytes * bmpinfo.bmHeight)
+            
+            screenshot = Image.frombuffer(
+                'RGB',
+                (bmpinfo.bmWidth, bmpinfo.bmHeight),
+                bmpstr, 'raw', 'BGRX', 0, 1
+            )
+            
+            # Cleanup
+            win32gui.DeleteObject(hbmScreen)
+            win32gui.DeleteDC(hdcMemDC)
+            win32gui.ReleaseDC(0, hdcScreen)
+            
+            print(f"[{datetime.now()}] Win32 Method 2 successful: {screenshot.width}x{screenshot.height}")
+            return screenshot
+            
+        except Exception as e2:
+            print(f"[{datetime.now()}] Win32 Method 2 failed: {e2}")
         
-        # Convert to PIL Image
-        bmpinfo = saveBitMap.GetInfo()
-        bmpstr = saveBitMap.GetBitmapBits(True)
-        
-        screenshot = Image.frombuffer(
-            'RGB',
-            (bmpinfo['bmWidth'], bmpinfo['bmHeight']),
-            bmpstr, 'raw', 'BGRX', 0, 1
-        )
-        
-        # Cleanup
-        win32gui.DeleteObject(saveBitMap.GetHandle())
-        saveDC.DeleteDC()
-        mfcDC.DeleteDC()
-        win32gui.ReleaseDC(hdesktop, hwndDC)
-        
-        return screenshot
+        print(f"[{datetime.now()}] All Win32 methods failed")
+        return None
         
     except Exception as e:
-        print(f"[{datetime.now()}] Win32 screenshot error: {e}")
+        print(f"[{datetime.now()}] Win32 screenshot general error: {e}")
+        return None
+
+
+def capture_screen_mss():
+    """
+    Capture screenshot using MSS (Microsoft Screen Capture) - often more reliable than Win32
+    """
+    if not MSS_AVAILABLE:
+        return None
+        
+    try:
+        with mss.mss() as sct:
+            # Capture the entire screen
+            monitor = sct.monitors[0]  # 0 = all monitors combined
+            screenshot_data = sct.grab(monitor)
+            
+            # Convert to PIL Image
+            screenshot = Image.frombytes('RGB', screenshot_data.size, screenshot_data.bgra, 'raw', 'BGRX')
+            
+            print(f"[{datetime.now()}] MSS screenshot captured: {screenshot.width}x{screenshot.height}")
+            return screenshot
+            
+    except Exception as e:
+        print(f"[{datetime.now()}] MSS screenshot error: {e}")
         return None
 
 
 def capture_browser_with_chrome(driver):
     """
-    Capture browser screenshot and simulate taskbar/desktop context
+    Capture browser screenshot and create full desktop resolution image with taskbar/desktop context
     """
     try:
-        # Get browser screenshot
-        screenshot_png = driver.get_screenshot_as_png()
-        browser_screenshot = Image.open(io.BytesIO(screenshot_png))
-        
-        # Get browser window position and size
-        window_rect = driver.get_window_rect()
-        
-        # Get screen dimensions
+        # Get actual screen dimensions first
         try:
             screen_width = win32api.GetSystemMetrics(win32con.SM_CXSCREEN)
             screen_height = win32api.GetSystemMetrics(win32con.SM_CYSCREEN)
+            print(f"[{datetime.now()}] Desktop resolution detected: {screen_width}x{screen_height}")
         except:
             screen_width = 1920  # Default fallback
             screen_height = 1080
+            print(f"[{datetime.now()}] Using fallback resolution: {screen_width}x{screen_height}")
         
-        # Create a desktop-like background
-        desktop_image = Image.new('RGB', (screen_width, screen_height), color=(0, 120, 215))  # Windows blue
+        # Try to maximize browser window to get full screen content
+        try:
+            current_size = driver.get_window_size()
+            print(f"[{datetime.now()}] Current browser size: {current_size['width']}x{current_size['height']}")
+            
+            # Set browser to near full screen (leaving space for taskbar)
+            taskbar_height = 40
+            target_width = screen_width
+            target_height = screen_height - taskbar_height
+            
+            driver.set_window_position(0, 0)
+            driver.set_window_size(target_width, target_height)
+            time.sleep(1)  # Wait for resize
+            
+            new_size = driver.get_window_size()
+            print(f"[{datetime.now()}] Resized browser to: {new_size['width']}x{new_size['height']}")
+            
+        except Exception as e:
+            print(f"[{datetime.now()}] Could not resize browser: {e}")
         
-        # Add taskbar simulation (bottom bar)
-        taskbar_height = 40
-        taskbar_color = (0, 0, 0)  # Black taskbar
-        for y in range(screen_height - taskbar_height, screen_height):
-            for x in range(screen_width):
-                desktop_image.putpixel((x, y), taskbar_color)
+        # Get browser screenshot after resize
+        screenshot_png = driver.get_screenshot_as_png()
+        browser_screenshot = Image.open(io.BytesIO(screenshot_png))
+        print(f"[{datetime.now()}] Browser screenshot captured: {browser_screenshot.width}x{browser_screenshot.height}")
         
-        # Add start button simulation
-        start_button_width = 100
-        start_button_color = (45, 45, 45)
-        for y in range(screen_height - taskbar_height + 5, screen_height - 5):
-            for x in range(5, start_button_width):
-                desktop_image.putpixel((x, y), start_button_color)
+        # If browser screenshot is close to full screen, return it directly with taskbar
+        if browser_screenshot.width >= screen_width * 0.9 and browser_screenshot.height >= (screen_height - 100) * 0.9:
+            print(f"[{datetime.now()}] Browser is near full screen, creating minimal desktop simulation")
+            
+            # Create full desktop image
+            desktop_image = Image.new('RGB', (screen_width, screen_height), color=(0, 120, 215))  # Windows blue
+            
+            # Add taskbar at bottom
+            taskbar_height = 40
+            taskbar_color = (0, 0, 0)  # Black taskbar
+            
+            # Draw taskbar more efficiently
+            draw = ImageDraw.Draw(desktop_image)
+            draw.rectangle([0, screen_height - taskbar_height, screen_width, screen_height], fill=taskbar_color)
+            
+            # Add start button
+            start_button_color = (45, 45, 45)
+            draw.rectangle([5, screen_height - taskbar_height + 5, 105, screen_height - 5], fill=start_button_color)
+            
+            # Paste browser screenshot, scaled to fit if necessary
+            if browser_screenshot.width > screen_width or browser_screenshot.height > (screen_height - taskbar_height):
+                # Scale down browser screenshot to fit
+                max_width = screen_width
+                max_height = screen_height - taskbar_height
+                browser_screenshot.thumbnail((max_width, max_height), Image.Resampling.LANCZOS)
+                print(f"[{datetime.now()}] Browser screenshot scaled to: {browser_screenshot.width}x{browser_screenshot.height}")
+            
+            # Center the browser screenshot on desktop
+            paste_x = (screen_width - browser_screenshot.width) // 2
+            paste_y = max(0, (screen_height - taskbar_height - browser_screenshot.height) // 2)
+            
+            desktop_image.paste(browser_screenshot, (paste_x, paste_y))
+            
+            print(f"[{datetime.now()}] Created full desktop simulation: {desktop_image.width}x{desktop_image.height}")
+            return desktop_image
         
-        # Paste browser screenshot onto desktop
-        browser_x = max(0, window_rect.get('x', 0))
-        browser_y = max(0, window_rect.get('y', 0))
-        
-        # Ensure browser fits on desktop
-        paste_x = min(browser_x, screen_width - browser_screenshot.width)
-        paste_y = min(browser_y, screen_height - browser_screenshot.height - taskbar_height)
-        
-        desktop_image.paste(browser_screenshot, (paste_x, paste_y))
-        
-        return desktop_image
+        else:
+            # Browser is small, create full desktop with browser positioned
+            print(f"[{datetime.now()}] Browser is small, creating full desktop with positioned browser")
+            
+            # Create full desktop image
+            desktop_image = Image.new('RGB', (screen_width, screen_height), color=(0, 120, 215))  # Windows blue
+            
+            # Add taskbar
+            taskbar_height = 40
+            draw = ImageDraw.Draw(desktop_image)
+            draw.rectangle([0, screen_height - taskbar_height, screen_width, screen_height], fill=(0, 0, 0))
+            draw.rectangle([5, screen_height - taskbar_height + 5, 105, screen_height - 5], fill=(45, 45, 45))
+            
+            # Get browser window position
+            try:
+                window_rect = driver.get_window_rect()
+                browser_x = max(0, window_rect.get('x', 0))
+                browser_y = max(0, window_rect.get('y', 0))
+            except:
+                browser_x = 0
+                browser_y = 0
+            
+            # Ensure browser fits on desktop
+            paste_x = min(browser_x, screen_width - browser_screenshot.width)
+            paste_y = min(browser_y, screen_height - browser_screenshot.height - taskbar_height)
+            
+            desktop_image.paste(browser_screenshot, (paste_x, paste_y))
+            
+            print(f"[{datetime.now()}] Created positioned desktop: {desktop_image.width}x{desktop_image.height}")
+            return desktop_image
         
     except Exception as e:
         print(f"[{datetime.now()}] Browser-based screenshot error: {e}")
