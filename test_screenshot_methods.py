@@ -118,3 +118,4 @@ if __name__ == "__main__":
         print("\nSkipping browser test")
     
     print(f"\n[{datetime.now()}] Screenshot tests completed!")
+

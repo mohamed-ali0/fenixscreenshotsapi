@@ -16,7 +16,7 @@ import win32con
 import win32ui
 import win32api
 import psutil
-from PIL import Image, ImageGrab, ImageDraw
+from PIL import Image, ImageGrab, ImageDraw, ImageFont
 import io
 try:
     import mss
@@ -364,10 +364,21 @@ def perform_scroll(driver, scroll_target=None, scroll_amount=800):
 
 def capture_desktop_screenshot(driver=None):
     """
-    Capture desktop screenshot using multiple fallback methods for Windows servers without RDC
+    Capture browser screenshot using standard JavaScript-based Selenium screenshot
+    No taskbar/URL bar simulation - just clean browser screenshot
     """
     try:
-        # Method 1: Try PIL ImageGrab (works when RDC is active)
+        # Method 1: Browser-based screenshot (standard Selenium - preferred)
+        if driver:
+            try:
+                screenshot = capture_browser_screenshot(driver)
+                if screenshot:
+                    print(f"[{datetime.now()}] ✅ Browser screenshot successful")
+                    return screenshot
+            except Exception as e:
+                print(f"[{datetime.now()}] ⚠️ Browser screenshot failed: {e}")
+        
+        # Method 2: Try PIL ImageGrab (works when RDC is active)
         try:
             screenshot = ImageGrab.grab()
             print(f"[{datetime.now()}] ✅ ImageGrab screenshot successful")
@@ -375,7 +386,7 @@ def capture_desktop_screenshot(driver=None):
         except Exception as e:
             print(f"[{datetime.now()}] ⚠️ ImageGrab failed (expected without RDC): {e}")
     
-        # Method 2: MSS (Microsoft Screen Capture) - often works when Win32 fails
+        # Method 3: MSS (Microsoft Screen Capture) - often works when Win32 fails
         if MSS_AVAILABLE:
             try:
                 screenshot = capture_screen_mss()
@@ -385,7 +396,7 @@ def capture_desktop_screenshot(driver=None):
             except Exception as e:
                 print(f"[{datetime.now()}] ⚠️ MSS screenshot failed: {e}")
         
-        # Method 3: Win32 API screenshot (works without RDC)
+        # Method 4: Win32 API screenshot (works without RDC)
         try:
             screenshot = capture_screen_win32()
             if screenshot:
@@ -393,16 +404,6 @@ def capture_desktop_screenshot(driver=None):
                 return screenshot
         except Exception as e:
             print(f"[{datetime.now()}] ⚠️ Win32 API screenshot failed: {e}")
-        
-        # Method 4: Browser-based screenshot with window manipulation
-        if driver:
-            try:
-                screenshot = capture_browser_with_chrome(driver)
-                if screenshot:
-                    print(f"[{datetime.now()}] ✅ Browser-based screenshot successful")
-                    return screenshot
-            except Exception as e:
-                print(f"[{datetime.now()}] ⚠️ Browser-based screenshot failed: {e}")
         
         print(f"[{datetime.now()}] ❌ All screenshot methods failed")
         return None
@@ -529,127 +530,176 @@ def capture_screen_mss():
         return None
 
 
-def capture_browser_with_chrome(driver):
+def capture_browser_screenshot(driver):
     """
-    Capture browser screenshot and create full desktop resolution image with taskbar/desktop context
+    Capture browser screenshot using standard Selenium JavaScript-based method
+    Simple, clean browser screenshot - no taskbar/URL bar simulation
     """
     try:
-        # Get actual screen dimensions first
-        try:
-            screen_width = win32api.GetSystemMetrics(win32con.SM_CXSCREEN)
-            screen_height = win32api.GetSystemMetrics(win32con.SM_CYSCREEN)
-            print(f"[{datetime.now()}] Desktop resolution detected: {screen_width}x{screen_height}")
-        except:
-            screen_width = 1920  # Default fallback
-            screen_height = 1080
-            print(f"[{datetime.now()}] Using fallback resolution: {screen_width}x{screen_height}")
-        
-        # Try to maximize browser window to get full screen content
-        try:
-            current_size = driver.get_window_size()
-            print(f"[{datetime.now()}] Current browser size: {current_size['width']}x{current_size['height']}")
-            
-            # Set browser to near full screen (leaving space for taskbar)
-            taskbar_height = 40
-            target_width = screen_width
-            target_height = screen_height - taskbar_height
-            
-            driver.set_window_position(0, 0)
-            driver.set_window_size(target_width, target_height)
-            time.sleep(1)  # Wait for resize
-            
-            new_size = driver.get_window_size()
-            print(f"[{datetime.now()}] Resized browser to: {new_size['width']}x{new_size['height']}")
-            
-        except Exception as e:
-            print(f"[{datetime.now()}] Could not resize browser: {e}")
-        
-        # Get browser screenshot after resize
+        # Get browser screenshot using standard Selenium method
         screenshot_png = driver.get_screenshot_as_png()
         browser_screenshot = Image.open(io.BytesIO(screenshot_png))
+        
         print(f"[{datetime.now()}] Browser screenshot captured: {browser_screenshot.width}x{browser_screenshot.height}")
-        
-        # If browser screenshot is close to full screen, return it directly with taskbar
-        if browser_screenshot.width >= screen_width * 0.9 and browser_screenshot.height >= (screen_height - 100) * 0.9:
-            print(f"[{datetime.now()}] Browser is near full screen, creating minimal desktop simulation")
-            
-            # Create full desktop image
-            desktop_image = Image.new('RGB', (screen_width, screen_height), color=(0, 120, 215))  # Windows blue
-            
-            # Add taskbar at bottom
-            taskbar_height = 40
-            taskbar_color = (0, 0, 0)  # Black taskbar
-            
-            # Draw taskbar more efficiently
-            draw = ImageDraw.Draw(desktop_image)
-            draw.rectangle([0, screen_height - taskbar_height, screen_width, screen_height], fill=taskbar_color)
-            
-            # Add start button
-            start_button_color = (45, 45, 45)
-            draw.rectangle([5, screen_height - taskbar_height + 5, 105, screen_height - 5], fill=start_button_color)
-            
-            # Paste browser screenshot, scaled to fit if necessary
-            if browser_screenshot.width > screen_width or browser_screenshot.height > (screen_height - taskbar_height):
-                # Scale down browser screenshot to fit
-                max_width = screen_width
-                max_height = screen_height - taskbar_height
-                browser_screenshot.thumbnail((max_width, max_height), Image.Resampling.LANCZOS)
-                print(f"[{datetime.now()}] Browser screenshot scaled to: {browser_screenshot.width}x{browser_screenshot.height}")
-            
-            # Center the browser screenshot on desktop
-            paste_x = (screen_width - browser_screenshot.width) // 2
-            paste_y = max(0, (screen_height - taskbar_height - browser_screenshot.height) // 2)
-            
-            desktop_image.paste(browser_screenshot, (paste_x, paste_y))
-            
-            print(f"[{datetime.now()}] Created full desktop simulation: {desktop_image.width}x{desktop_image.height}")
-            return desktop_image
-        
-        else:
-            # Browser is small, create full desktop with browser positioned
-            print(f"[{datetime.now()}] Browser is small, creating full desktop with positioned browser")
-            
-            # Create full desktop image
-            desktop_image = Image.new('RGB', (screen_width, screen_height), color=(0, 120, 215))  # Windows blue
-            
-            # Add taskbar
-            taskbar_height = 40
-            draw = ImageDraw.Draw(desktop_image)
-            draw.rectangle([0, screen_height - taskbar_height, screen_width, screen_height], fill=(0, 0, 0))
-            draw.rectangle([5, screen_height - taskbar_height + 5, 105, screen_height - 5], fill=(45, 45, 45))
-            
-            # Get browser window position
-            try:
-                window_rect = driver.get_window_rect()
-                browser_x = max(0, window_rect.get('x', 0))
-                browser_y = max(0, window_rect.get('y', 0))
-            except:
-                browser_x = 0
-                browser_y = 0
-            
-            # Ensure browser fits on desktop
-            paste_x = min(browser_x, screen_width - browser_screenshot.width)
-            paste_y = min(browser_y, screen_height - browser_screenshot.height - taskbar_height)
-            
-            desktop_image.paste(browser_screenshot, (paste_x, paste_y))
-            
-            print(f"[{datetime.now()}] Created positioned desktop: {desktop_image.width}x{desktop_image.height}")
-            return desktop_image
+        return browser_screenshot
         
     except Exception as e:
-        print(f"[{datetime.now()}] Browser-based screenshot error: {e}")
+        print(f"[{datetime.now()}] Browser screenshot error: {e}")
         return None
+
+
+def add_taskbar_and_url_bar(screenshot):
+    """
+    Add URL bar at top and taskbar at bottom to a screenshot
+    Returns the composite image with URL bar + screenshot + taskbar
+    """
+    try:
+        print(f"[{datetime.now()}] 🔧 Adding URL bar and taskbar to screenshot...")
+        print(f"[{datetime.now()}] Current working directory: {os.getcwd()}")
+        
+        # Get templates directory and ensure it exists
+        templates_dir = os.path.join(os.getcwd(), "templates_png")
+        os.makedirs(templates_dir, exist_ok=True)
+        
+        url_bar_path = os.path.join(templates_dir, "url_bar.png")
+        taskbar_path = os.path.join(templates_dir, "taskbar_appointment.png")
+        
+        print(f"[{datetime.now()}] Looking for URL bar at: {url_bar_path}")
+        print(f"[{datetime.now()}] Looking for taskbar at: {taskbar_path}")
+        
+        # Check if template files exist
+        if not os.path.exists(url_bar_path):
+            print(f"[{datetime.now()}] ⚠️ URL bar template not found: {url_bar_path}, skipping taskbar addition")
+            return screenshot
+        
+        if not os.path.exists(taskbar_path):
+            print(f"[{datetime.now()}] ⚠️ Taskbar template not found: {taskbar_path}, skipping taskbar addition")
+            return screenshot
+        
+        print(f"[{datetime.now()}] ✅ Template files found, loading images...")
+        
+        # Load template images
+        url_bar = Image.open(url_bar_path)
+        taskbar = Image.open(taskbar_path)
+        
+        # Get dimensions
+        screenshot_width, screenshot_height = screenshot.size
+        url_bar_width, url_bar_height = url_bar.size
+        taskbar_width, taskbar_height = taskbar.size
+        
+        # Use max width as final width
+        final_width = max(taskbar_width, url_bar_width)
+        
+        # Resize URL bar and taskbar to match final width if needed
+        if url_bar_width != final_width:
+            url_bar = url_bar.resize((final_width, url_bar_height), Image.Resampling.LANCZOS)
+        
+        if taskbar_width != final_width:
+            taskbar = taskbar.resize((final_width, taskbar_height), Image.Resampling.LANCZOS)
+        
+        # Resize screenshot to match final width
+        screenshot_resized = screenshot.resize((final_width, screenshot_height), Image.Resampling.LANCZOS)
+        
+        # Calculate final dimensions
+        final_height = url_bar_height + screenshot_height + taskbar_height
+        
+        # Create composite image
+        composite = Image.new('RGB', (final_width, final_height), color=(255, 255, 255))
+        
+        # Paste URL bar at top
+        composite.paste(url_bar, (0, 0))
+        
+        # Paste screenshot in middle
+        if screenshot_resized.mode == 'RGBA':
+            composite.paste(screenshot_resized, (0, url_bar_height), screenshot_resized)
+        else:
+            composite.paste(screenshot_resized, (0, url_bar_height))
+        
+        # Paste taskbar at bottom
+        composite.paste(taskbar, (0, url_bar_height + screenshot_height))
+        
+        # Add current system date and time to taskbar
+        draw = ImageDraw.Draw(composite)
+        taskbar_start_y = url_bar_height + screenshot_height
+        
+        # Get current system date and time
+        now = datetime.now()
+        
+        # Format time like "6:12 PM" (remove leading zero from hour)
+        time_str = now.strftime("%I:%M %p")
+        time_text = time_str.lstrip('0') if time_str.startswith('0') else time_str
+        
+        # Format date like "10/28/2025" using current system date (remove leading zeros from month and day)
+        month = str(now.month)
+        day = str(now.day)
+        year = str(now.year)
+        date_text = f"{month}/{day}/{year}"
+        
+        # Load taskbar font
+        taskbar_font_size = 24
+        taskbar_font_bold = False
+        
+        try:
+            if taskbar_font_bold:
+                taskbar_font = ImageFont.truetype("segoeuib.ttf", taskbar_font_size)
+            else:
+                taskbar_font = ImageFont.truetype("segoeui.ttf", taskbar_font_size)
+        except:
+            try:
+                if taskbar_font_bold:
+                    taskbar_font = ImageFont.truetype("arialbd.ttf", taskbar_font_size)
+                else:
+                    taskbar_font = ImageFont.truetype("arial.ttf", taskbar_font_size)
+            except:
+                try:
+                    if taskbar_font_bold:
+                        taskbar_font = ImageFont.truetype("DejaVuSans-Bold.ttf", taskbar_font_size)
+                    else:
+                        taskbar_font = ImageFont.truetype("DejaVuSans.ttf", taskbar_font_size)
+                except:
+                    taskbar_font = ImageFont.load_default()
+        
+        # Position control for taskbar text (right side)
+        date_x_offset = 216
+        date_y_offset = 40
+        time_x_offset = 200
+        time_y_offset = 5
+        
+        # Calculate positions
+        date_x = final_width - date_x_offset
+        date_y = taskbar_start_y + date_y_offset
+        time_x = final_width - time_x_offset
+        time_y = taskbar_start_y + time_y_offset
+        
+        # Draw time and date with white font
+        draw.text((time_x, time_y), time_text, font=taskbar_font, fill=(255, 255, 255))
+        draw.text((date_x, date_y), date_text, font=taskbar_font, fill=(255, 255, 255))
+        
+        print(f"[{datetime.now()}] ✅ Successfully added URL bar and taskbar to screenshot: {final_width}x{final_height}")
+        print(f"[{datetime.now()}] ✅ Date/Time on taskbar: {time_text} | {date_text}")
+        return composite
+        
+    except Exception as e:
+        import traceback
+        print(f"[{datetime.now()}] ❌ Error adding taskbar/URL bar: {e}")
+        print(f"[{datetime.now()}] Traceback: {traceback.format_exc()}")
+        return screenshot
 
 
 def capture_full_page_screenshot(driver, filename):
     """
-    Capture full DESKTOP screenshots by scrolling and stitching images together
-    Shows taskbar, URL bar, and complete desktop view - Works without RDC
+    Capture full page screenshots by scrolling and stitching browser screenshots together
+    Uses standard JavaScript-based Selenium screenshot method - clean browser screenshots
+    Each screenshot gets URL bar and taskbar added before stitching
     """
     try:
         # Create screenshots directory
         screenshots_dir = os.path.join(os.getcwd(), "screenshots")
         os.makedirs(screenshots_dir, exist_ok=True)
+        
+        # Ensure templates directory exists
+        templates_dir = os.path.join(os.getcwd(), "templates_png")
+        os.makedirs(templates_dir, exist_ok=True)
         
         # Find scroll target first
         scroll_target = find_scroll_target(driver)
@@ -689,7 +739,7 @@ def capture_full_page_screenshot(driver, filename):
         no_progress_count = 0
         max_no_progress = 3
         
-        print(f"[{datetime.now()}] Starting FULL DESKTOP capture with {scroll_amount}px scroll steps...")
+        print(f"[{datetime.now()}] Starting full page capture with {scroll_amount}px scroll steps...")
         
         while screenshot_count < 50:  # Safety limit
             screenshot_count += 1
@@ -700,12 +750,18 @@ def capture_full_page_screenshot(driver, filename):
             else:
                 current_position = driver.execute_script("return window.pageYOffset || document.documentElement.scrollTop;")
             
-            print(f"[{datetime.now()}] Capturing FULL SCREEN screenshot {screenshot_count} at position {current_position}px")
+            print(f"[{datetime.now()}] Capturing browser screenshot {screenshot_count} at position {current_position}px")
             
-            # Take full desktop screenshot using multiple fallback methods
+            # Take browser screenshot using standard JavaScript-based method
             screenshot = capture_desktop_screenshot(driver)
             if screenshot:
-                screenshots.append(screenshot)
+                print(f"[{datetime.now()}] Screenshot captured: {screenshot.width}x{screenshot.height}, adding taskbar/URL bar...")
+                # Add URL bar and taskbar to each screenshot before stitching
+                screenshot_with_taskbar = add_taskbar_and_url_bar(screenshot)
+                print(f"[{datetime.now()}] After taskbar addition: {screenshot_with_taskbar.width}x{screenshot_with_taskbar.height}")
+                screenshots.append(screenshot_with_taskbar)
+                # Don't close original here - it will be closed after stitching
+                # The composite is a new independent image, so original can be closed later
             else:
                 print(f"[{datetime.now()}] Failed to capture screenshot {screenshot_count}, stopping")
                 break
@@ -756,12 +812,15 @@ def capture_full_page_screenshot(driver, filename):
                     
                     if outer_scrolled:
                         time.sleep(2)  # Wait for any animations
-                        # Take final FULL SCREEN screenshot with bottom bars moved
+                        # Take final browser screenshot with bottom bars moved
                         final_screenshot = capture_desktop_screenshot(driver)
                         if final_screenshot:
-                            screenshots.append(final_screenshot)
+                            # Add URL bar and taskbar to final screenshot
+                            final_screenshot_with_taskbar = add_taskbar_and_url_bar(final_screenshot)
+                            screenshots.append(final_screenshot_with_taskbar)
+                            # Don't close original here - it will be closed after stitching
                             screenshot_count += 1
-                            print(f"[{datetime.now()}] Captured final FULL SCREEN screenshot {screenshot_count} with bottom bars pushed out of view")
+                            print(f"[{datetime.now()}] Captured final browser screenshot {screenshot_count} with bottom bars pushed out of view")
                         else:
                             print(f"[{datetime.now()}] Failed to capture final screenshot")
                     else:
@@ -808,7 +867,7 @@ def capture_full_page_screenshot(driver, filename):
                 screenshot.close()
             final_image.close()
             
-            print(f"[{datetime.now()}] Full DESKTOP screenshot saved: {final_path}")
+            print(f"[{datetime.now()}] Full page screenshot saved: {final_path}")
             return True, final_path
         else:
             return False, "No screenshots captured"
@@ -821,7 +880,7 @@ def capture_full_page_screenshot(driver, filename):
 
 def stitch_screenshots(screenshots, scroll_amount):
     """
-    Simply combine full DESKTOP screenshots vertically - one after another, no offsets
+    Simply combine browser screenshots vertically - one after another, no offsets
     """
     if not screenshots:
         return None
@@ -834,8 +893,8 @@ def stitch_screenshots(screenshots, scroll_amount):
     width = first_screenshot.width
     height_per_screenshot = first_screenshot.height
     
-    print(f"[{datetime.now()}] Combining {len(screenshots)} full DESKTOP screenshots vertically...")
-    print(f"[{datetime.now()}] Each desktop screenshot: {width}x{height_per_screenshot}px")
+    print(f"[{datetime.now()}] Combining {len(screenshots)} browser screenshots vertically...")
+    print(f"[{datetime.now()}] Each browser screenshot: {width}x{height_per_screenshot}px")
     
     # Simple total height = number of screenshots × height of each
     total_height = len(screenshots) * height_per_screenshot
@@ -851,7 +910,7 @@ def stitch_screenshots(screenshots, scroll_amount):
         print(f"[{datetime.now()}] Placing screenshot {i+1} at y={y_position}px")
         final_image.paste(screenshot, (0, y_position))
     
-    print(f"[{datetime.now()}] Desktop screenshots combined successfully")
+    print(f"[{datetime.now()}] Browser screenshots combined successfully")
     return final_image
 
 
@@ -1114,9 +1173,9 @@ def download_excel_report(username, password):
         success, screenshot_path = capture_full_page_screenshot(driver, screenshot_filename)
         
         if success:
-            return True, f"Successfully captured full DESKTOP screenshot: {screenshot_path}"
+            return True, f"Successfully captured full page screenshot: {screenshot_path}"
         else:
-            return False, f"Navigation successful but desktop screenshot failed: {screenshot_path}"
+            return False, f"Navigation successful but screenshot capture failed: {screenshot_path}"
     
     except Exception as e:
         error_msg = f"Error navigating to Fenix Marine Services: {str(e)}"

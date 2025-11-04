@@ -180,17 +180,54 @@ def scheduled_excel_download_task():
 
 
 def restart_scheduler():
-    """Restart the scheduler with updated frequency"""
+    """Restart the scheduler with updated frequency and preferred hour"""
     scheduler.remove_all_jobs()
     frequency_hours = settings.get_frequency()
-    scheduler.add_job(
-        func=scheduled_excel_download_task,
-        trigger="interval",
-        hours=frequency_hours,
-        id='screenshot_job',
-        replace_existing=True
-    )
-    print(f"Scheduler restarted with frequency: {frequency_hours} hours")
+    preferred_hour = settings.get_preferred_hour()
+    
+    # Calculate next run time based on preferred hour
+    now = datetime.now()
+    next_run = now.replace(hour=preferred_hour, minute=0, second=0, microsecond=0)
+    
+    # If preferred hour has already passed today, schedule for next occurrence
+    if next_run <= now:
+        if frequency_hours >= 24:
+            # Daily - schedule for tomorrow at preferred hour
+            next_run = next_run + timedelta(days=1)
+        else:
+            # Multiple times per day - schedule for next occurrence
+            # Find next valid time that's a multiple of frequency_hours from preferred hour
+            hours_until_next = frequency_hours - ((now.hour - preferred_hour) % frequency_hours)
+            if hours_until_next == frequency_hours:
+                hours_until_next = 0
+            next_run = now.replace(minute=0, second=0, microsecond=0) + timedelta(hours=hours_until_next)
+            # If we went past midnight, set to preferred hour next day
+            if next_run.hour != preferred_hour and next_run.day != now.day:
+                next_run = next_run.replace(hour=preferred_hour)
+    
+    # Use cron trigger for daily, interval for multiple times per day
+    if frequency_hours >= 24:
+        # Daily at preferred hour
+        scheduler.add_job(
+            func=scheduled_excel_download_task,
+            trigger="cron",
+            hour=preferred_hour,
+            minute=0,
+            id='screenshot_job',
+            replace_existing=True
+        )
+        print(f"Scheduler restarted: Daily at {preferred_hour:02d}:00")
+    else:
+        # Multiple times per day - use interval starting at preferred hour
+        scheduler.add_job(
+            func=scheduled_excel_download_task,
+            trigger="interval",
+            hours=frequency_hours,
+            start_date=next_run,
+            id='screenshot_job',
+            replace_existing=True
+        )
+        print(f"Scheduler restarted: Every {frequency_hours} hours starting at {next_run.strftime('%H:%M')} (preferred: {preferred_hour:02d}:00)")
 
 
 @app.route('/')
@@ -613,6 +650,9 @@ def set_preferred_hour():
         # Update preferred hour
         settings.set_preferred_hour(preferred_hour)
         
+        # Restart scheduler with new preferred hour
+        restart_scheduler()
+        
         return jsonify({
             "success": True,
             "message": f"Preferred hour updated to {preferred_hour}:00",
@@ -761,6 +801,7 @@ if __name__ == '__main__':
     print("Fenix Marine Services Screenshot API")
     print("=" * 50)
     print(f"Screenshot frequency: {settings.get_frequency()} hours")
+    print(f"Preferred start time: {settings.get_preferred_hour():02d}:00")
     print(f"Screenshots directory: {SCREENSHOTS_DIR}")
     print("Scheduler started")
     print("=" * 50)
