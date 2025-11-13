@@ -135,6 +135,14 @@ def convert_excel_to_pdf(excel_path, pdf_path):
 SCREENSHOTS_DIR = "screenshots"
 os.makedirs(SCREENSHOTS_DIR, exist_ok=True)
 
+# Public base URL for generated links
+PUBLIC_BASE_URL = os.environ.get('PUBLIC_BASE_URL', 'https://empties.provar.io/fenix').rstrip('/')
+
+
+def build_public_url(path: str) -> str:
+    """Construct a public URL using the configured base."""
+    return f"{PUBLIC_BASE_URL}/{path.lstrip('/')}"
+
 # Scheduler for automated screenshots
 scheduler = BackgroundScheduler()
 screenshot_lock = threading.Lock()
@@ -322,7 +330,7 @@ def get_screenshot(date_str):
         screenshot_file = matching_files[0]
         
         # Return JSON with download link
-        download_url = f"{request.host_url}download/{screenshot_file}"
+        download_url = build_public_url(f"download/{screenshot_file}")
         
         return jsonify({
             "success": True,
@@ -419,7 +427,7 @@ def get_screenshots_range():
                 zipf.write(file_path, filename)
         
         # Return JSON with download link
-        download_url = f"{request.host_url}download/{zip_filename}"
+        download_url = build_public_url(f"download/{zip_filename}")
         
         return jsonify({
             "success": True,
@@ -714,7 +722,7 @@ def capture_screenshot_now():
                     "success": True,
                     "message": "Fenix Marine Services screenshot captured successfully",
                     "filename": filename,
-                    "download_url": f"{request.host_url}download/{filename}"
+                    "download_url": build_public_url(f"download/{filename}")
                 })
             else:
                 return jsonify({

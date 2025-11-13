@@ -8,7 +8,7 @@ import json
 from datetime import datetime, timedelta
 
 # API base URL
-BASE_URL = "http://localhost:5005"
+BASE_URL = "http://37.60.243.201:5005"
 
 # Admin password
 ADMIN_PASSWORD = "YB02Ss3JJdk"
